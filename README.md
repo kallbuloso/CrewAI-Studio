@@ -4,12 +4,63 @@ Welcome to CrewAI Studio! This application provides a user-friendly interface wr
 
 ## Features
 
-- **Multi-platform support**: Works on Windows and Linux.
+- **Multi-platform support**: Works on Windows, Linux and MacOS.
 - **No coding required**: User-friendly interface for interacting with CrewAI.
 - **Conda and virtual environment support**: Choose between Conda and a Python virtual environment for installation.
-- **CrewAI tools** You can use crewai tools to interact with real world. (with crewAI-tools bugfix: RagTool based tools now handle post-creation passed parameters correctly [ #<49>](https://github.com/joaomdmoura/crewAI-tools/pull/49))
-- **API support**: Currently OpenAI, Groq, Google AI and LM Studio backends are supported. OpenAI is probably still needed for embeddings in many tools.
+- **CrewAI tools** You can use crewai tools to interact with real world. Crewai studio uses a forked version of crewai-tools with some bugfixes and enhancements (https://github.com/strnad/crewAI-tools)
+- **\*NEW\* Custom Tools** Custom tools for calling APIs and for writing files. More will be added soon
+- **API support**: Currently OpenAI, Groq, Anthropic and LM Studio backends are supported. OpenAI key is probably still needed for embeddings in many tools. Don't forget to load an embedding model when using LM Studio.
+- **Single Page app export**: Feature to export crew as simple single page streamlit app (doesn't support custom tools yet).
 - **Threaded crew run**: Crews can run in background and can be stopped.
+
+## Roadmap
+
+- **Better import/export**
+- **Human input**
+- **Chat**
+- **Automatic creation of crews**
+- **Add more LLM backends**
+- **Add more custom tools**
+- **Multiuser environment**
+
+## Changelog (only important changes)
+
+**July 9, 2024**
+- **Single page export:** export works again and now even with custom tools.
+- **ScrapeWebsiteTool:** Fixed bug in crewai-tools which caused problems with scraping some websites
+
+**July 5, 2024**
+- **Custom Code interpreter:** enhanced version of Code interpreter - allows to mount the working directory to a folder on host system
+
+**July 3, 2024**
+- **Code interpreter:** Added tool for executing python scripts inside docker.
+- **Custom Code interpreter:** Custom Code interpreter tool which allows to use shared folder.
+
+**June 27, 2024**
+- **New models:** Anthropic Claude 3.5 Sonnet support .
+- **New tasks:** Code interpreter tool.
+
+**June 13, 2024**
+- **Redesigned Agents and Tasks Pages:** Introduced crew tabs for better organization.
+- **Task Overview Update:** Added assigned agent prefixes to tasks.
+
+**June 11, 2024**
+- **New Custom Tools:** Added `ApiTool` and rewrote `FileWriterTool`.
+
+**June 9, 2024**
+- **Async Tasks Support:** Enabled asynchronous task execution.
+
+**June 7, 2024**
+- **LLM Providers Update:** Disabled Google and HuggingFace due to threading issues.
+
+**June 6, 2024**
+- **Background Crew Execution:** Fixed bug in crewai-tools that prevented RagTool tools from using post-creation parameters.
+
+**June 5, 2024**
+- **Background Crew Execution:** Enabled crews to run in the background (separate thread).
+
+**May 30, 2024**
+- **Crew Export:** Initial commit
 
 ## Screenshots
 
@@ -22,7 +73,7 @@ Welcome to CrewAI Studio! This application provides a user-friendly interface wr
 
 **For Virtual Environment**: Ensure you have Python installed. If you dont have python instaled, you can simply use the conda installer.
 
-#### On Linux
+#### On Linux or MacOS
 
 1. **Clone the repository (or use downloaded ZIP file)**:
 
@@ -106,19 +157,22 @@ Conda will be installed locally in the project folder. No need for a pre-existin
    ./run_conda.bat
    ```
 
-If you do not have Git installed, you can download the repository as a ZIP file from the GitHub page and extract it.
-
-## About CrewAI
-
-CrewAI is a robust and flexible framework designed to facilitate the orchestration of autonomous AI agents. These agents can work together seamlessly, sharing goals and collaborating on tasks to achieve impressive results. Here are some key features of CrewAI:
-
-- **Collaborative Intelligence**: CrewAI excels in scenarios where multiple agents come together to form a "crew." This collaboration allows for the delegation of tasks and spontaneous assistance, mirroring real-world teamwork.
-- **Dynamic and Adaptable Processes**: The framework supports dynamic processes that can adapt to both development and production environments, making it versatile for various use cases.
-
-- **Open Source and Extensible**: CrewAI is open-source and encourages contributions from the community. It integrates well with various AI models and tools, offering extensive customization options for specific needs.
-
-- **Integration with LangChain**: Built on top of LangChain, CrewAI agents benefit from the extensive toolkits and tools provided by LangChain, enabling a wide range of functionalities out of the box.
-
 ## Configuration
 
 Before running the application, ensure you update the `.env` file with your API keys and other necessary configurations. An example `.env` file is provided for reference.
+
+## Troubleshooting
+In case of problems:
+- Delete the `venv/miniconda` folder and reinstall `crewai-studio`.
+- Rename `crewai.db` (it contains your crews but sometimes new versions can break compatibility).
+- Raise an issue and I will help you.
+
+## Star History
+
+<a href="https://star-history.com/#strnad/CrewAI-Studio&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=strnad/CrewAI-Studio&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=strnad/CrewAI-Studio&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=strnad/CrewAI-Studio&type=Date" />
+ </picture>
+</a>

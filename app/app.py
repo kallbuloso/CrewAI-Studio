@@ -8,13 +8,13 @@ from pg_tools import PageTools
 from pg_crew_run import PageCrewRun
 from pg_export_crew import PageExportCrew
 from dotenv import load_dotenv
-
+import os
 def pages():
     return {
-        'Agents': PageAgents(),
-        'Tasks': PageTasks(),
         'Crews': PageCrews(),
         'Tools': PageTools(),
+        'Agents': PageAgents(),
+        'Tasks': PageTasks(),
         'Kickoff!': PageCrewRun(),
         'Import/export': PageExportCrew()
     }
@@ -32,7 +32,7 @@ def draw_sidebar():
         st.image("img/crewai_logo.png")
 
         if 'page' not in ss:
-            ss.page = 'Agents'
+            ss.page = 'Crews'
         
         selected_page = st.radio('Page', list(pages().keys()), index=list(pages().keys()).index(ss.page),label_visibility="collapsed")
         if selected_page != ss.page:
@@ -42,6 +42,14 @@ def draw_sidebar():
 def main():
     st.set_page_config(page_title="CrewAI Studio", page_icon="img/favicon.ico", layout="wide")
     load_dotenv()
+    if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):
+        try:
+            import agentops
+            agentops.init(api_key=os.getenv('AGENTOPS_API_KEY'))    
+        except ModuleNotFoundError as e:
+            ss.agentops_failed = True
+            print(f"Error initializing AgentOps: {str(e)}")            
+        
     db_utils.initialize_db()
     load_data()
     draw_sidebar()

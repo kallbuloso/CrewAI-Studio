@@ -3,11 +3,12 @@ from streamlit import session_state as ss
 import zipfile
 import os
 import re
+import json
+import shutil
 import db_utils
-from crewai_tools import (
-    ScrapeWebsiteTool, FileReadTool, DirectorySearchTool, DirectoryReadTool,
-    CodeDocsSearchTool, YoutubeVideoSearchTool, SerperDevTool, YoutubeChannelSearchTool, WebsiteSearchTool
-)
+from utils import escape_quotes
+from my_tools import TOOL_CLASSES
+from crewai import Process
 
 class PageExportCrew:
     def __init__(self):
@@ -16,9 +17,9 @@ class PageExportCrew:
     def extract_placeholders(self, text):
         return re.findall(r'\{(.*?)\}', text)
 
-    def get_placeholders_from_tasks(self, tasks):
+    def get_placeholders_from_crew(self, crew):
         placeholders = set()
-        for task in tasks:
+        for task in crew.tasks:
             placeholders.update(self.extract_placeholders(task.description))
             placeholders.update(self.extract_placeholders(task.expected_output))
         return list(placeholders)
@@ -27,34 +28,32 @@ class PageExportCrew:
         agents = crew.agents
         tasks = crew.tasks
 
+        # Check if any custom tools are used
+        custom_tools_used = any(tool.name in ["CustomApiTool", "CustomFileWriteTool", "CustomCodeInterpreterTool"] 
+                                for agent in agents for tool in agent.tools)
+
+        def json_dumps_python(obj):
+            if isinstance(obj, bool):
+                return str(obj)
+            return json.dumps(obj)
+
         def format_tool_instance(tool):
-            tool_map = {
-                'ScrapeWebsiteTool': ScrapeWebsiteTool,
-                'FileReadTool': FileReadTool,
-                'DirectorySearchTool': DirectorySearchTool,
-                'DirectoryReadTool': DirectoryReadTool,
-                'CodeDocsSearchTool': CodeDocsSearchTool,
-                'YoutubeVideoSearchTool': YoutubeVideoSearchTool,
-                'SerperDevTool': SerperDevTool,
-                'YoutubeChannelSearchTool': YoutubeChannelSearchTool,
-                'WebsiteSearchTool': WebsiteSearchTool
-            }
-            ToolClass = tool_map.get(tool.name)
-            if ToolClass:
-                params = ', '.join([f'{key}="{value}"' for key, value in tool.parameters.items() if value])
-                return f'{ToolClass.__name__}({params})' if params else f'{ToolClass.__name__}()'
+            tool_class = TOOL_CLASSES.get(tool.name)
+            if tool_class:
+                params = ', '.join([f'{key}={json_dumps_python(value)}' for key, value in tool.parameters.items() if value is not None])
+                return f'{tool.name}({params})' if params else f'{tool.name}()'
             return None
 
         agent_definitions = ",\n        ".join([
             f"""
 Agent(
-    role="{agent.role}",
-    backstory="{agent.backstory}",
-    goal="{agent.goal}",
-    allow_delegation={str(agent.allow_delegation)},
-    verbose={str(agent.verbose)},
+    role={json_dumps_python(agent.role)},
+    backstory={json_dumps_python(agent.backstory)},
+    goal={json_dumps_python(agent.goal)},
+    allow_delegation={json_dumps_python(agent.allow_delegation)},
+    verbose={json_dumps_python(agent.verbose)},
     tools=[{', '.join([format_tool_instance(tool) for tool in agent.tools])}],
-    llm=create_llm("{agent.llm_provider_model.split(': ')[0]}", "{agent.llm_provider_model.split(': ')[1]}", {agent.temperature})
+    llm=create_llm({json_dumps_python(agent.llm_provider_model)}, {json_dumps_python(agent.temperature)})
 )
             """
             for agent in agents
@@ -63,59 +62,103 @@ Agent(
         task_definitions = ",\n        ".join([
             f"""
 Task(
-    description="{task.description}",
-    expected_output="{task.expected_output}",
-    agent=next(agent for agent in agents if agent.role == "{task.agent.role}")
+    description={json_dumps_python(task.description)},
+    expected_output={json_dumps_python(task.expected_output)},
+    agent=next(agent for agent in agents if agent.role == {json_dumps_python(task.agent.role)}),
+    async_execution={json_dumps_python(task.async_execution)}
 )
             """
             for task in tasks
         ])
 
-        placeholders = self.get_placeholders_from_tasks(tasks)
+        placeholders = self.get_placeholders_from_crew(crew)
         placeholder_inputs = "\n    ".join([
-            f'{placeholder} = st.text_input("{placeholder.capitalize()}")'
+            f'{placeholder} = st.text_input({json_dumps_python(placeholder.capitalize())})'
             for placeholder in placeholders
         ])
-        placeholders_dict = ", ".join([f'"{placeholder}": {placeholder}' for placeholder in placeholders])
+        placeholders_dict = ", ".join([f'{json_dumps_python(placeholder)}: {placeholder}' for placeholder in placeholders])
 
         manager_llm_definition = ""
-        if crew.process == "hierarchical" and crew.manager_llm:
-            manager_llm_definition = f'manager_llm=create_llm("{crew.manager_llm.split(": ")[0]}", "{crew.manager_llm.split(": ")[1]}")'
+        if crew.process == Process.hierarchical and crew.manager_llm:
+            manager_llm_definition = f'manager_llm=create_llm({json_dumps_python(crew.manager_llm)})'
+        elif crew.process == Process.hierarchical and crew.manager_agent:
+            manager_llm_definition = f'manager_agent=next(agent for agent in agents if agent.role == {json_dumps_python(crew.manager_agent.role)})'
         
         app_content = f"""
 import streamlit as st
 from crewai import Agent, Task, Crew, Process
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
+from langchain_anthropic import ChatAnthropic
 from dotenv import load_dotenv
 import os
-from crewai_tools import (
-    ScrapeWebsiteTool, FileReadTool, DirectorySearchTool, DirectoryReadTool,
-    CodeDocsSearchTool, YoutubeVideoSearchTool, SerperDevTool, YoutubeChannelSearchTool, WebsiteSearchTool
-)
+from crewai_tools import *
+{'''from custom_tools import CustomApiTool, CustomFileWriteTool, CustomCodeInterpreterTool''' if custom_tools_used else ''}
 
 load_dotenv()
 
+def create_lmstudio_llm(model, temperature):
+    api_base = os.getenv('LMSTUDIO_API_BASE')
+    os.environ["OPENAI_API_KEY"] = "lm-studio"
+    os.environ["OPENAI_API_BASE"] = api_base
+    if api_base:
+        return ChatOpenAI(openai_api_key='lm-studio', openai_api_base=api_base, temperature=temperature)
+    else:
+        raise ValueError("LM Studio API base not set in .env file")
+
 def create_openai_llm(model, temperature):
+    safe_pop_env_var('OPENAI_API_KEY')
+    safe_pop_env_var('OPENAI_API_BASE')
+    load_dotenv(override=True)
     api_key = os.getenv('OPENAI_API_KEY')
     api_base = os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1/')
-    return ChatOpenAI(openai_api_key=api_key, openai_api_base=api_base, model_name=model, temperature=temperature)
+    if api_key:
+        return ChatOpenAI(openai_api_key=api_key, openai_api_base=api_base, model_name=model, temperature=temperature)
+    else:
+        raise ValueError("OpenAI API key not set in .env file")
 
 def create_groq_llm(model, temperature):
     api_key = os.getenv('GROQ_API_KEY')
-    return ChatGroq(groq_api_key=api_key, model_name=model, temperature=temperature)
+    if api_key:
+        return ChatGroq(groq_api_key=api_key, model_name=model, temperature=temperature)
+    else:
+        raise ValueError("Groq API key not set in .env file")
 
+def create_anthropic_llm(model, temperature):
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if api_key:
+        return ChatAnthropic(anthropic_api_key=api_key, model_name=model, temperature=temperature)
+    else:
+        raise ValueError("Anthropic API key not set in .env file")
+
+def safe_pop_env_var(key):
+    try:
+        os.environ.pop(key)
+    except KeyError:
+        pass
+        
 LLM_CONFIG = {{
     "OpenAI": {{
         "create_llm": create_openai_llm
     }},
     "Groq": {{
         "create_llm": create_groq_llm
+    }},
+    "LM Studio": {{
+        "create_llm": create_lmstudio_llm
+    }},
+    "Anthropic": {{
+        "create_llm": create_anthropic_llm
     }}
 }}
 
-def create_llm(provider, model, temperature=0.1):
-    return LLM_CONFIG[provider]["create_llm"](model, temperature)
+def create_llm(provider_and_model, temperature=0.1):
+    provider, model = provider_and_model.split(": ")
+    create_llm_func = LLM_CONFIG.get(provider, {{}}).get("create_llm")
+    if create_llm_func:
+        return create_llm_func(model, temperature)
+    else:
+        raise ValueError(f"LLM provider {{provider}} is not recognized or not supported")
 
 def load_agents():
     agents = [
@@ -130,11 +173,20 @@ def load_tasks(agents):
     return tasks
 
 def main():
-    st.title("{crew.name} App")
+    st.title({json_dumps_python(crew.name)})
 
     agents = load_agents()
     tasks = load_tasks(agents)
-    crew = Crew(agents=agents, tasks=tasks, full_output=True, process="{crew.process}", verbose={crew.verbose}, {manager_llm_definition})
+    crew = Crew(
+        agents=agents, 
+        tasks=tasks, 
+        process={json_dumps_python(crew.process)}, 
+        verbose={json_dumps_python(crew.verbose)}, 
+        memory={json_dumps_python(crew.memory)}, 
+        cache={json_dumps_python(crew.cache)}, 
+        max_rpm={json_dumps_python(crew.max_rpm)},
+        {manager_llm_definition}
+    )
 
     {placeholder_inputs}
 
@@ -144,11 +196,18 @@ def main():
 
     if st.button("Run Crew"):
         with st.spinner("Running crew..."):
-            result = crew.kickoff(inputs=placeholders)
-        with st.expander("Final output", expanded=True):                
-            st.write(result['final_output'])
-        with st.expander("Full output", expanded=False):
-            st.write(result)
+            try:
+                result = crew.kickoff(inputs=placeholders)
+                if isinstance(result, dict):
+                    with st.expander("Final output", expanded=True):                
+                        st.write(result.get('final_output', 'No final output available'))
+                    with st.expander("Full output", expanded=False):
+                        st.write(result)
+                else:
+                    st.write("Result:")
+                    st.write(result)
+            except Exception as e:
+                st.error(f"An error occurred: {{str(e)}}")
 
 if __name__ == '__main__':
     main()
@@ -156,12 +215,19 @@ if __name__ == '__main__':
         with open(os.path.join(output_dir, 'app.py'), 'w') as f:
             f.write(app_content)
 
+        # If custom tools are used, copy the custom_tools.py file
+        if custom_tools_used:
+            source_path = os.path.join(os.path.dirname(__file__), 'custom_tools.py')
+            dest_path = os.path.join(output_dir, 'custom_tools.py')
+            shutil.copy2(source_path, dest_path)
+
     def create_env_file(self, output_dir):
         env_content = """
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_API_BASE=https://api.openai.com/v1/
-GROQ_API_KEY=your_groq_api_key
-LMSTUDIO_API_BASE=your_lmstudio_api_base
+# OPENAI_API_KEY="FILL-IN-YOUR-OPENAI-API-KEY"
+# OPENAI_API_BASE="OPTIONAL-FILL-IN-YOUR-OPENAI-API-BASE"
+# GROQ_API_KEY="FILL-IN-YOUR-GROQ-API-KEY"
+# ANTHROPIC_API_KEY="FILL-IN-YOUR-ANTHROPIC-API-KEY"
+# LMSTUDIO_API_BASE="http://localhost:1234/v1"
 """
         with open(os.path.join(output_dir, '.env'), 'w') as f:
             f.write(env_content)
@@ -202,17 +268,51 @@ streamlit run app.py --server.headless True
             f.write(run_sh_content)
             os.chmod(os.path.join(output_dir, 'run.sh'), 0o755)
 
-        requirements_txt_content = """
-streamlit
-crewai
-crewai[tools]
-langchain_openai
-langchain_groq
-langchain_community
-python-dotenv
+        install_bat_content = """
+@echo off
+
+:: Create a virtual environment
+python -m venv venv || (
+    echo Failed to create venv
+    exit /b 1
+)
+
+:: Activate the virtual environment
+call venv\\Scripts\\activate || (
+    echo Failed to activate venv
+    exit /b 1
+)
+
+:: Install requirements
+pip install -r requirements.txt || (
+    echo Failed to install requirements
+    exit /b 1
+)
+
+echo Installation completed successfully.
 """
-        with open(os.path.join(output_dir, 'requirements.txt'), 'w') as f:
-            f.write(requirements_txt_content)
+        with open(os.path.join(output_dir, 'install.bat'), 'w') as f:
+            f.write(install_bat_content)
+
+        run_bat_content = """
+@echo off
+
+:: Activate the virtual environment
+call venv\\Scripts\\activate || (
+    echo Failed to activate venv
+    exit /b 1
+)
+
+:: Run the Streamlit app
+streamlit run app.py --server.headless true
+"""
+        with open(os.path.join(output_dir, 'run.bat'), 'w') as f:
+            f.write(run_bat_content)
+
+        # Copy the main project's requirements.txt
+        source_requirements = os.path.join(os.path.dirname(__file__), '..', 'requirements.txt')
+        dest_requirements = os.path.join(output_dir, 'requirements.txt')
+        shutil.copy2(source_requirements, dest_requirements)
 
     def zip_directory(self, folder_path, output_path):
         with zipfile.ZipFile(output_path, 'w') as zip_file:
@@ -264,8 +364,8 @@ python-dotenv
             st.write("No crews defined yet.")
         else:
             crew_names = [crew.name for crew in ss.crews]
-            selected_crew_name = st.selectbox("Select crew to export as singlepage app (doesn't support tools yet)", crew_names)
-            if st.button("Export singlepage app", disabled=True, help="This feature is now broken and will be fixed soon."):
+            selected_crew_name = st.selectbox("Select crew to export as singlepage app", crew_names)
+            if st.button("Export singlepage app"):
                 zip_path = self.create_export(selected_crew_name)
                 with open(zip_path, "rb") as fp:
                     st.download_button(
@@ -274,16 +374,3 @@ python-dotenv
                         file_name=f"{selected_crew_name}_app.zip",
                         mime="application/zip"
                     )
-
-            # JSON Export Button
-            # if st.button("Export crew to json"):
-            #     file_path = f"{selected_crew_name}_crew.json"
-            #     db_utils.export_crew_to_json(selected_crew_name,file_path)
-            #     with open(file_path, "rb") as fp:
-            #         st.download_button(
-            #             label="Download Crew JSON",
-            #             data=fp,
-            #             file_name=file_path,
-            #             mime="application/json"
-            #         )
-

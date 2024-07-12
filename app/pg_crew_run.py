@@ -5,6 +5,7 @@ import threading
 import ctypes
 import queue
 import time
+import traceback
 
 class PageCrewRun:
     def __init__(self):
@@ -48,7 +49,8 @@ class PageCrewRun:
             result = crewai_crew.kickoff(inputs=inputs)
             message_queue.put({"result": result})
         except Exception as e:
-            message_queue.put({"result": f"Error running crew: {str(e)}"})
+            stack_trace = traceback.format_exc()
+            message_queue.put({"result": f"Error running crew: {str(e)}", "stack_trace": stack_trace})
 
     def get_mycrew_by_name(self, crewname):
         return next((crew for crew in ss.crews if crew.name == crewname), None)
@@ -90,7 +92,9 @@ class PageCrewRun:
         selected_crew = self.get_mycrew_by_name(ss.selected_crew_name)
 
         if selected_crew:
+            selected_crew.draw(expanded=False,buttons=False)
             self.draw_placeholders(selected_crew)
+            
             if not selected_crew.is_valid(show_warning=True):
                 st.error("Selected crew is not valid. Please fix the issues.")
             self.control_buttons(selected_crew)
@@ -102,7 +106,8 @@ class PageCrewRun:
             try:
                 crew = selected_crew.get_crewai_crew(full_output=True)
             except Exception as e:
-                st.error(f"Error creating crew: {str(e)}")
+                st.exception(e)
+                traceback.print_exc()
                 return
 
             ss.running = True
