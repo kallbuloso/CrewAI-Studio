@@ -115,6 +115,7 @@ def save_task(task):
         'async_execution': task.async_execution,
         'agent_id': task.agent.id if task.agent else None,
         'context_from_async_tasks_ids': task.context_from_async_tasks_ids,
+        'context_from_sync_tasks_ids': task.context_from_sync_tasks_ids,
         'created_at': task.created_at
     }
     save_entity('task', task.id, data)
@@ -143,6 +144,7 @@ def save_crew(crew):
         'task_ids': [task.id for task in crew.tasks],
         'memory': crew.memory,
         'cache': crew.cache,
+        'planning': crew.planning,
         'max_rpm' : crew.max_rpm,
         'manager_llm': crew.manager_llm,
         'manager_agent_id': crew.manager_agent.id if crew.manager_agent else None,
@@ -166,6 +168,7 @@ def load_crews():
             created_at=data['created_at'], 
             memory=data.get('memory'),
             cache=data.get('cache'),
+            planning=data.get('planning'),
             max_rpm=data.get('max_rpm'), 
             manager_llm=data.get('manager_llm'),
             manager_agent=agents_dict.get(data.get('manager_agent_id'))
@@ -186,7 +189,6 @@ def save_tool(tool):
     }
     save_entity('tool', tool.tool_id, data)
 
-
 def load_tools():
     rows = load_entities('tool')
     tools = []
@@ -200,7 +202,6 @@ def load_tools():
 
 def delete_tool(tool_id):
     delete_entity('tool', tool_id)
-
 
 def export_to_json(file_path):
     conn = get_db_connection()

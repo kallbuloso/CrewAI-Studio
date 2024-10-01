@@ -70,13 +70,7 @@ read agentops
 if [ "$agentops" == "y" ]; then
     echo "Installing agentops..."
     conda run -n crewai pip install agentops || { echo "Failed to install agentops"; }
-    echo "Installing git version of crewai..."
-    conda run -n crewai pip install git+https://github.com/joaomdmoura/crewAI.git@bb64c8096496660f7867450f7d49fd2e72067d0e --force-reinstall $USE_CACHE || { echo "Failed to install crewai from git"; }
 fi
-
-# Create the data folder if it doesn't exist
-DATA_DIR="$SCRIPT_DIR/data"
-mkdir -p "$DATA_DIR"
 
 # Check if .env file exists, if not copy .env_example to .env
 if [ ! -f "$SCRIPT_DIR/.env" ]; then

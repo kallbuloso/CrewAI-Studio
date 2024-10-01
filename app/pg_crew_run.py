@@ -6,6 +6,7 @@ import ctypes
 import queue
 import time
 import traceback
+import os
 
 class PageCrewRun:
     def __init__(self):
@@ -45,10 +46,15 @@ class PageCrewRun:
         return placeholders
 
     def run_crew(self, crewai_crew, inputs, message_queue):
+        if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):
+            import agentops
+            agentops.start_session()
         try:
             result = crewai_crew.kickoff(inputs=inputs)
             message_queue.put({"result": result})
         except Exception as e:
+            if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):                       
+                agentops.end_session()
             stack_trace = traceback.format_exc()
             message_queue.put({"result": f"Error running crew: {str(e)}", "stack_trace": stack_trace})
 
@@ -136,15 +142,17 @@ class PageCrewRun:
     def display_result(self):
         if ss.result is not None:
             if isinstance(ss.result, dict):
-                if 'final_output' in ss.result["result"]:
+                if 'final_output' in ss.result["result"]: #old version of crewai
                     st.expander("Final output", expanded=True).write(ss.result["result"]['final_output'])
+                elif hasattr(ss.result["result"], 'raw'):  #new version of crewai
+                    st.expander("Final output", expanded=True).write(ss.result['result'].raw)  
                 st.expander("Full output", expanded=False).write(ss.result)
             else:
                 st.error(ss.result)
         elif ss.running and ss.crew_thread is not None:
             with st.spinner("Running crew..."):
                 while ss.running:
-                    time.sleep(0.1)
+                    time.sleep(1)
                     if not ss.message_queue.empty():
                         ss.result = ss.message_queue.get()
                         ss.running = False
