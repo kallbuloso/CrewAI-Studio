@@ -2,7 +2,15 @@ import streamlit as st
 import os
 from utils import rnd_id
 from crewai_tools import CodeInterpreterTool,ScrapeElementFromWebsiteTool,TXTSearchTool,SeleniumScrapingTool,PGSearchTool,PDFSearchTool,MDXSearchTool,JSONSearchTool,GithubSearchTool,EXASearchTool,DOCXSearchTool,CSVSearchTool,ScrapeWebsiteTool, FileReadTool, DirectorySearchTool, DirectoryReadTool, CodeDocsSearchTool, YoutubeVideoSearchTool,SerperDevTool,YoutubeChannelSearchTool,WebsiteSearchTool
-from custom_tools import CustomApiTool,CustomFileWriteTool,CustomCodeInterpreterTool
+from tools.CSVSearchToolEnhanced import CSVSearchToolEnhanced
+from tools.CustomApiTool import CustomApiTool
+from tools.CustomCodeInterpreterTool import CustomCodeInterpreterTool
+from tools.CustomFileWriteTool import CustomFileWriteTool
+from tools.ScrapeWebsiteToolEnhanced import ScrapeWebsiteToolEnhanced
+from tools.ScrapflyScrapeWebsiteTool import ScrapflyScrapeWebsiteTool
+
+from tools.DuckDuckGoSearchTool import DuckDuckGoSearchTool
+
 from langchain_community.tools import YahooFinanceNewsTool
 
 class MyTool:
@@ -226,7 +234,7 @@ class MySeleniumScrapingTool(MyTool):
         super().__init__(
             tool_id, 
             'SeleniumScrapingTool', 
-            "A tool that can be used to read a specific part of website content. CSS elements are separated by comma, cookies are in format {key1\:value1},{key2\:value2}", 
+            r"A tool that can be used to read a specific part of website content. CSS elements are separated by comma, cookies are in format {key1\:value1},{key2\:value2}", 
             parameters, 
             website_url=website_url, 
             css_element=css_element, 
@@ -263,7 +271,7 @@ class MyScrapeElementFromWebsiteTool(MyTool):
         super().__init__(
             tool_id, 
             'ScrapeElementFromWebsiteTool', 
-            "A tool that can be used to read a specific part of website content. CSS elements are separated by comma, cookies are in format {key1\:value1},{key2\:value2}", 
+            r"A tool that can be used to read a specific part of website content. CSS elements are separated by comma, cookies are in format {key1\:value1},{key2\:value2}", 
             parameters, 
             website_url=website_url, 
             css_element=css_element, 
@@ -317,6 +325,15 @@ class MyCustomFileWriteTool(MyTool):
         )
 
 
+class MyDuckDuckGoSearchTool(MyTool):
+    def __init__(self, tool_id=None):
+        parameters = {}
+        super().__init__(tool_id, 'DuckDuckGoSearchTool', "A tool to search the web using DuckDuckGo engine.", parameters)
+
+    def create_tool(self) -> DuckDuckGoSearchTool:
+        return DuckDuckGoSearchTool()
+
+
 class MyCodeInterpreterTool(MyTool):
     def __init__(self, tool_id=None):
         parameters = {}
@@ -336,11 +353,58 @@ class MyCustomCodeInterpreterTool(MyTool):
     def create_tool(self) -> CustomCodeInterpreterTool:
         return CustomCodeInterpreterTool(workspace_dir=self.parameters.get('workspace_dir') if self.parameters.get('workspace_dir') else "workspace")
 
+class MyCSVSearchToolEnhanced(MyTool):
+    def __init__(self, tool_id=None, csv=None):
+        parameters = {
+            'csv': {'mandatory': False}
+        }
+        super().__init__(tool_id, 'CSVSearchToolEnhanced', "A tool that can be used to semantic search a query from a CSV's content.", parameters, csv=csv)
+
+    def create_tool(self) -> CSVSearchToolEnhanced:
+        return CSVSearchToolEnhanced(csv=self.parameters.get('csv') if self.parameters.get('csv') else None)
+    
+class MyScrapeWebsiteToolEnhanced(MyTool):
+    def __init__(self, tool_id=None, website_url=None, cookies=None, show_urls=None, css_selector=None):
+        parameters = {
+            'website_url': {'mandatory': False},
+            'cookies': {'mandatory': False},
+            'show_urls': {'mandatory': False},
+            'css_selector': {'mandatory': False}
+        }
+        super().__init__(tool_id, 'ScrapeWebsiteToolEnhanced', "An enhanced tool that can be used to read website content.", parameters, website_url=website_url, cookies=cookies, show_urls=show_urls, css_selector=css_selector)
+
+    def create_tool(self) -> ScrapeWebsiteToolEnhanced:
+        return ScrapeWebsiteToolEnhanced(
+            website_url=self.parameters.get('website_url') if self.parameters.get('website_url') else None,
+            cookies=self.parameters.get('cookies') if self.parameters.get('cookies') else None,
+            show_urls=self.parameters.get('show_urls') if self.parameters.get('show_urls') else False,
+            css_selector=self.parameters.get('css_selector') if self.parameters.get('css_selector') else None
+        )
+
+class MyScrapflyScrapeWebsiteTool(MyTool):
+    def __init__(self, tool_id=None, api_key=None):
+        parameters = {
+            'api_key': {'mandatory': False}
+        }
+        super().__init__(tool_id, 'ScrapflyScrapeWebsiteTool', "A tool that uses Scrapfly API to scrape websites with advanced features like headless browser support, proxies, and anti-bot bypass.", parameters, api_key=api_key)
+
+    def create_tool(self) -> ScrapflyScrapeWebsiteTool:
+        api_key = self.parameters.get('api_key') or os.getenv('SCRAPFLY_API_KEY')
+        if not api_key:
+            raise ValueError("Scrapfly API key not provided and not set in .env file (SCRAPFLY_API_KEY)")
+        return ScrapflyScrapeWebsiteTool(
+            api_key=api_key
+        )
+
 # Register all tools here
 TOOL_CLASSES = {
+    'DuckDuckGoSearchTool': MyDuckDuckGoSearchTool,
     'SerperDevTool': MySerperDevTool,
     'WebsiteSearchTool': MyWebsiteSearchTool,
     'ScrapeWebsiteTool': MyScrapeWebsiteTool,
+    'ScrapeWebsiteToolEnhanced': MyScrapeWebsiteToolEnhanced,
+    'ScrapflyScrapeWebsiteTool': MyScrapflyScrapeWebsiteTool,
+    
     'SeleniumScrapingTool': MySeleniumScrapingTool,
     'ScrapeElementFromWebsiteTool': MyScrapeElementFromWebsiteTool,
     'CustomApiTool': MyCustomApiTool,
@@ -359,6 +423,7 @@ TOOL_CLASSES = {
 
     'TXTSearchTool': MyTXTSearchTool,
     'CSVSearchTool': MyCSVSearchTool,
+    'CSVSearchToolEnhanced': MyCSVSearchToolEnhanced,
     'DOCXSearchTool': MyDocxSearchTool, 
     'EXASearchTool': MyEXASearchTool,
     'JSONSearchTool': MyJSONSearchTool,

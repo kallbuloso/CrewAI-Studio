@@ -33,7 +33,7 @@ class PageExportCrew:
         tasks = crew.tasks
 
         # Check if any custom tools are used
-        custom_tools_used = any(tool.name in ["CustomApiTool", "CustomFileWriteTool", "CustomCodeInterpreterTool"] 
+        custom_tools_used = any(tool.name in ["CustomApiTool", "CustomFileWriteTool", "CustomCodeInterpreterTool", "ScrapeWebsiteToolEnhanced", "CSVSearchToolEnhanced"] 
                                 for agent in agents for tool in agent.tools)
 
         def json_dumps_python(obj):
@@ -83,10 +83,14 @@ Task(
         placeholders_dict = ", ".join([f'{json_dumps_python(placeholder)}: {placeholder}' for placeholder in placeholders])
 
         manager_llm_definition = ""
+        planning_llm_definition = ""
         if crew.process == Process.hierarchical and crew.manager_llm:
             manager_llm_definition = f'manager_llm=create_llm({json_dumps_python(crew.manager_llm)})'
         elif crew.process == Process.hierarchical and crew.manager_agent:
             manager_llm_definition = f'manager_agent=next(agent for agent in agents if agent.role == {json_dumps_python(crew.manager_agent.role)})'
+        
+        if crew.planning and crew.planning_llm:
+            planning_llm_definition = f'planning_llm=create_llm({json_dumps_python(crew.planning_llm)})'
         
         app_content = f"""
 import streamlit as st
@@ -97,8 +101,11 @@ from langchain_anthropic import ChatAnthropic
 from dotenv import load_dotenv
 import os
 from crewai_tools import *
-{'''from custom_tools import CustomApiTool, CustomFileWriteTool, CustomCodeInterpreterTool''' if custom_tools_used else ''}
-
+{'''from tools.CustomApiTool import CustomApiTool''' if custom_tools_used else ''}
+{'''from tools.CustomFileWriteTool import CustomFileWriteTool''' if custom_tools_used else ''}
+{'''from tools.CustomCodeInterpreterTool import CustomCodeInterpreterTool''' if custom_tools_used else ''}
+{'''from tools.ScrapeWebsiteToolEnhanced import ScrapeWebsiteToolEnhanced''' if custom_tools_used else ''}
+{'''from tools.CSVSearchToolEnhanced import CSVSearchToolEnhanced''' if custom_tools_used else ''}
 load_dotenv()
 
 def create_lmstudio_llm(model, temperature):
@@ -189,7 +196,9 @@ def main():
         memory={json_dumps_python(crew.memory)}, 
         cache={json_dumps_python(crew.cache)}, 
         max_rpm={json_dumps_python(crew.max_rpm)},
-        {manager_llm_definition}
+        planning={json_dumps_python(crew.planning)},
+        {manager_llm_definition}{',' if manager_llm_definition and planning_llm_definition else ''}
+        {planning_llm_definition}
     )
 
     {placeholder_inputs}
@@ -197,21 +206,16 @@ def main():
     placeholders = {{
         {placeholders_dict}
     }}
-
-    if st.button("Run Crew"):
-        with st.spinner("Running crew..."):
-            try:
-                result = crew.kickoff(inputs=placeholders)
-                if isinstance(result, dict):
-                    with st.expander("Final output", expanded=True):                
-                        st.write(result.get('final_output', 'No final output available'))
-                    with st.expander("Full output", expanded=False):
-                        st.write(result)
-                else:
-                    st.write("Result:")
-                    st.write(result)
-            except Exception as e:
-                st.error(f"An error occurred: {{str(e)}}")
+    with st.spinner("Running crew..."):
+        try:
+            result = crew.kickoff(inputs=placeholders)
+            with st.expander("Final output", expanded=True):
+                if hasattr(result, 'raw'):
+                    st.write(result.raw)                
+            with st.expander("Full output", expanded=False):
+                st.write(result)
+        except Exception as e:
+            st.error(f"An error occurred: {{str(e)}}")
 
 if __name__ == '__main__':
     main()
@@ -219,11 +223,10 @@ if __name__ == '__main__':
         with open(os.path.join(output_dir, 'app.py'), 'w') as f:
             f.write(app_content)
 
-        # If custom tools are used, copy the custom_tools.py file
         if custom_tools_used:
-            source_path = os.path.join(os.path.dirname(__file__), 'custom_tools.py')
-            dest_path = os.path.join(output_dir, 'custom_tools.py')
-            shutil.copy2(source_path, dest_path)
+            source_path = os.path.join(os.path.dirname(__file__), 'tools')
+            dest_path = os.path.join(output_dir, 'tools')
+            shutil.copytree(source_path, dest_path)
 
     def create_env_file(self, output_dir):
         env_content = """
@@ -349,6 +352,8 @@ streamlit run app.py --server.headless true
             'verbose': crew.verbose,
             'memory': crew.memory,
             'cache': crew.cache,
+            'planning': crew.planning,
+            'planning_llm': crew.planning_llm,
             'max_rpm': crew.max_rpm,
             'manager_llm': crew.manager_llm,
             'manager_agent': crew.manager_agent.id if crew.manager_agent else None,
@@ -385,6 +390,7 @@ streamlit run app.py --server.headless true
                 'async_execution': task.async_execution,
                 'agent_id': task.agent.id if task.agent else None,
                 'context_from_async_tasks_ids': task.context_from_async_tasks_ids,
+                'context_from_sync_tasks_ids': task.context_from_sync_tasks_ids,
                 'created_at': task.created_at
             }
             crew_data['tasks'].append(task_data)
@@ -441,7 +447,8 @@ streamlit run app.py --server.headless true
                 expected_output=task_data['expected_output'],
                 async_execution=task_data['async_execution'],
                 agent=next((agent for agent in agents if agent.id == task_data['agent_id']), None),
-                context_from_async_tasks_ids=task_data['context_from_async_tasks_ids'],
+                context_from_async_tasks_ids=task_data.get('context_from_async_tasks_ids', None),
+                context_from_sync_tasks_ids=task_data.get('context_from_sync_tasks_ids', None),
                 created_at=task_data['created_at']
             )
             tasks.append(task)
@@ -455,6 +462,8 @@ streamlit run app.py --server.headless true
             verbose=crew_data['verbose'],
             memory=crew_data['memory'],
             cache=crew_data['cache'],
+            planning=crew_data.get('planning', False),
+            planning_llm=crew_data.get('planning_llm'),
             max_rpm=crew_data['max_rpm'],
             manager_llm=crew_data['manager_llm'],
             manager_agent=next((agent for agent in agents if agent.id == crew_data['manager_agent']), None),

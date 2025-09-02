@@ -7,15 +7,21 @@ from pg_crews import PageCrews
 from pg_tools import PageTools
 from pg_crew_run import PageCrewRun
 from pg_export_crew import PageExportCrew
+from pg_results import PageResults
+from pg_knowledge import PageKnowledge
 from dotenv import load_dotenv
+from llms import load_secrets_fron_env
 import os
+
 def pages():
     return {
         'Crews': PageCrews(),
         'Tools': PageTools(),
         'Agents': PageAgents(),
         'Tasks': PageTasks(),
+        'Knowledge': PageKnowledge(),  # Add this line
         'Kickoff!': PageCrewRun(),
+        'Results': PageResults(),
         'Import/export': PageExportCrew()
     }
 
@@ -25,6 +31,7 @@ def load_data():
     ss.crews = db_utils.load_crews()
     ss.tools = db_utils.load_tools()
     ss.enabled_tools = db_utils.load_tools_state()
+    ss.knowledge_sources = db_utils.load_knowledge_sources()
 
 
 def draw_sidebar():
@@ -38,10 +45,11 @@ def draw_sidebar():
         if selected_page != ss.page:
             ss.page = selected_page
             st.rerun()
-
+            
 def main():
     st.set_page_config(page_title="CrewAI Studio", page_icon="img/favicon.ico", layout="wide")
     load_dotenv()
+    load_secrets_fron_env()
     if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):
         try:
             import agentops
